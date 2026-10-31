@@ -316,6 +316,53 @@ interface PanoramaDollar {
         /** Fast lookup of known HUD panels, e.g. "ChatInput", "damageImpactInfo", "GameTime". */
         find(id: string): Panel | null;
     };
+
+    /** Added by chat.js (.shared). Needs hud_lookup.js included before it. */
+    ModChat?: ModChat;
+
+    /** Added by umm.js (.shared): talks to Universal Mod Manager's settings window. */
+    ModUmm?: ModUmm;
+
+    /** Added by checkm8's kill_lines.js: chat lines per hero, keyed by internal hero name. */
+    ModKillLines?: Record<string, string[]>;
+}
+
+type ChatChannel = "all" | "team";
+
+interface ModChat {
+    /**
+     * Open chat on `channel`, type `text` and submit it. Gives up (and closes chat) if
+     * chat never opens on that channel. Ignored while another send is in progress.
+     */
+    send(text: string, channel: ChatChannel, options?: ModOptions): void;
+    /** true from send() until the line is submitted or the attempt is abandoned. */
+    isSending(): boolean;
+}
+
+interface ModUmm {
+    /** Announce a mod to UMM. Its manifest is sent now and again whenever UMM says hello. */
+    register(mod: UmmMod): void;
+    /** UMM may send booleans as "1"/"0" after a restart. */
+    toBool(value: unknown): boolean;
+}
+
+/** Passed to the shared modules by the mod using them. */
+interface ModOptions {
+    /** The mod's own logger, so shared scripts log under the mod's prefix and DEBUG switch. */
+    log?: (message: string) => void;
+    /** Return false once the mod has been replaced or unloaded; the module then stops. */
+    alive?: () => boolean;
+}
+
+interface UmmMod extends ModOptions {
+    id: string;
+    name: string;
+    /** UMM manifest entries: group, toggle, slider, select, checks, export, import. See README. */
+    settings: Record<string, unknown>[];
+    /** Current values, keyed by setting id. UMM prefers what it already has saved. */
+    values(): Record<string, unknown>;
+    /** One call per setting: on register (saved value or default) and on every change. */
+    onSet(key: string, value: unknown): void;
 }
 
 declare const $: PanoramaDollar;

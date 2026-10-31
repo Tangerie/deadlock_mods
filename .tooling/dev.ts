@@ -1,8 +1,10 @@
 // Dev loop for Deadlock Panorama mods. Windows only (CSDK and the compiler are Windows-only).
 //
-//   deno task dev [mod]        build -> install into addons/deadlock_mods_dev -> launch Deadlock -> follow the log
+//   deno task dev [mod]        build with DEBUG: true -> install into addons/deadlock_mods_dev -> launch Deadlock -> follow the log
 //   deno task log [mod]        just follow the log (game already running)
 //   deno task build [mod]      release VPK at tools/builds/<mod>.vpk with DEBUG: false
+//
+// Both builds compile a staged copy with DEBUG set for them; the source itself is untouched.
 //
 // Options (after the task name):
 //   --all              show every log line, not just the filtered ones
@@ -321,8 +323,9 @@ function copyDir(from : string, to : string) : void {
     }
 }
 
-// Copy the mod with every `DEBUG: true` in its scripts turned off.
-function stageRelease(mod : string) : string {
+// Copy the mod with every `DEBUG:` setting in its scripts set to `debug`.
+// Source keeps DEBUG false; dev builds stage it on, release builds off.
+function stage(mod : string, debug : boolean) : string {
     const stage = join(buildsDir, ".stage", mod);
     try {
         Deno.removeSync(stage, { recursive: true });
@@ -337,10 +340,10 @@ function stageRelease(mod : string) : string {
             }
             const path = join(scripts, entry.name);
             const before = Deno.readTextFileSync(path);
-            const after = before.replace(/^(\s*DEBUG\s*:\s*)true\b/gm, "$1false");
+            const after = before.replace(/^(\s*DEBUG\s*:\s*)(?:true|false)\b/gm, "$1" + debug);
             if(after !== before) {
                 Deno.writeTextFileSync(path, after);
-                step("DEBUG off in " + entry.name);
+                step("DEBUG " + (debug ? "on" : "off") + " in " + entry.name);
             }
         }
     }
@@ -531,10 +534,9 @@ async function main() : Promise<void> {
     const mod = pickMod(args.mod);
 
     if(args.mode === "release") {
-        const stage = stageRelease(mod);
         const output = join(buildsDir, mod + ".vpk");
         step("release build of " + mod);
-        await compile(mod, output, stage);
+        await compile(mod, output, stage(mod, false));
         Deno.removeSync(join(buildsDir, ".stage"), { recursive: true });
         step("done: " + output);
         return;
@@ -553,7 +555,8 @@ async function main() : Promise<void> {
     await closeGame();
     ensureModsMounted(paths);
     step("building " + mod + " -> " + output);
-    await compile(mod, output);
+    await compile(mod, output, stage(mod, true));
+    Deno.removeSync(join(buildsDir, ".stage"), { recursive: true });
 
     // Fresh log per run, so old lines don't scroll past.
     try {

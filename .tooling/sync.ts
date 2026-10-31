@@ -8,7 +8,7 @@ import { dirname, fromFileUrl, join, relative } from "@std/path";
 
 const root = join(dirname(fromFileUrl(import.meta.url)), "..");
 const sharedDir = join(root, ".shared");
-const shared = ["hud_lookup.js"];
+const shared = [...Deno.readDirSync(sharedDir)].filter((entry) => entry.isFile).map((entry) => entry.name);
 const skip = new Set(["tools", "types", "test"]);
 
 function readOrNull(path : string) : string | null {

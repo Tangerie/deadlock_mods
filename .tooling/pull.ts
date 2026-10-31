@@ -4,7 +4,7 @@
 //   deno task pull [mod] --check     don't write, just say whether Valve's layout changed since the last pull
 //
 // Which layouts: every .xml already in <mod>/panorama/layout/ (that's the "host layout").
-// Which scripts: every .js in <mod>/panorama/scripts/, hud_lookup first.
+// Which scripts: every .js in <mod>/panorama/scripts/, in load order (see scriptNames).
 //
 // Needs Source2Viewer-CLI.exe (the console build of Source 2 Viewer; the Source2Viewer.exe
 // in the CSDK folder is the GUI and can't do this). Found in, in order:
@@ -175,14 +175,28 @@ function findFile(dir : string, fileName : string) : string | null {
 
 const INCLUDE = /^[ \t]*<include\s+src="s2r:\/\/panorama\/scripts\/([^"]+)\.vjs_c"\s*\/>[ \t]*\r?\n/gim;
 
-// hud_lookup first (the mod scripts use it), then the rest alphabetically.
+// Scripts in one layout run in include order and share `$`, which is how they hand each
+// other their $.Mod* objects. So: hud_lookup first (the others use it), then the other
+// shared scripts from .shared/, then the mod's own, and <mod>.js last, since it's the one
+// that starts everything. A-Z within each group.
+function scriptOrder(names : string[], shared : string[], mod : string) : string[] {
+    const sorted = [...names].sort();
+    const isShared = (name : string) => shared.includes(name);
+    return [
+        ...sorted.filter((name) => name === "hud_lookup"),
+        ...sorted.filter((name) => name !== "hud_lookup" && isShared(name)),
+        ...sorted.filter((name) => name !== "hud_lookup" && !isShared(name) && name !== mod),
+        ...sorted.filter((name) => name === mod),
+    ];
+}
+
 function scriptNames(mod : string) : string[] {
-    const dir = join(root, mod, "panorama", "scripts");
-    const names = [...Deno.readDirSync(dir)]
-        .filter((entry) => entry.isFile && entry.name.endsWith(".js"))
-        .map((entry) => entry.name.slice(0, -3))
-        .sort();
-    return [...names.filter((n) => n === "hud_lookup"), ...names.filter((n) => n !== "hud_lookup")];
+    const jsNames = (dir : string) => exists(dir)
+        ? [...Deno.readDirSync(dir)]
+            .filter((entry) => entry.isFile && entry.name.endsWith(".js"))
+            .map((entry) => entry.name.slice(0, -3))
+        : [];
+    return scriptOrder(jsNames(join(root, mod, "panorama", "scripts")), jsNames(join(root, ".shared")), mod);
 }
 
 // Removes the includes we add (any script this mod ships), leaves Valve's own alone.

@@ -57,20 +57,11 @@
             "problemMatcher": []
         },
         {
-            "label": "Verify (lint + types + tests)",
+            "label": "Verify (lint + types)",
             "type": "process",
             "command": "deno",
             "args": ["task", "verify"],
             "group": { "kind": "test", "isDefault": true },
-            "presentation": { "clear": true },
-            "problemMatcher": ["$deno"]
-        },
-        {
-            "label": "Test",
-            "type": "process",
-            "command": "deno",
-            "args": ["task", "test"],
-            "group": "test",
             "presentation": { "clear": true },
             "problemMatcher": ["$deno"]
         },

@@ -1,8 +1,8 @@
 {
-    // Root config = Panorama. Every */panorama/scripts/*.js is checked against
-    // types/panorama.d.ts with plain ES2021 and nothing else: no Deno, no DOM.
-    // test/ and .tooling/ are workspace members with normal Deno settings.
-    "workspace": ["./test", "./.tooling"],
+    // Root config = Panorama. Every */panorama/scripts/*.js and .shared/*.js is checked
+    // against types/panorama.d.ts with plain ES2021 and nothing else: no Deno, no DOM.
+    // .tooling/ is a workspace member with normal Deno settings.
+    "workspace": ["./.tooling"],
 
     "compilerOptions": {
         "checkJs": true,

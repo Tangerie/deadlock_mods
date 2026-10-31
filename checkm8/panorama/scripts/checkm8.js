@@ -1,65 +1,22 @@
+// Checkm8: sends a chat line when you get a kill (not an assist), picked from your
+// hero's list in kill_lines.js.
+//
+// Needs, included before this script (deno task pull orders them):
+//   hud_lookup.js   $.ModHudLookup  fast HUD panel lookup
+//   chat.js         $.ModChat       sends the line
+//   umm.js          $.ModUmm        in-game settings (if UMM is installed)
+//   kill_lines.js   $.ModKillLines  the lines per hero
 (() => {
     "use strict";
 
     // ------------------------------------------------------------------ config
 
-    // What to say after a kill, per hero. One line is picked at random each kill. An empty
-    // list means nothing is sent while playing that hero.
-    // Keys are the game's internal hero names: the shop panel gets a `hero_<key>` class for
-    // the hero you're playing (see detectHero). Display names from the English localisation.
-    /** @type {Record<string, string[]>} */
-    const KILL_LINES = {
-        atlas: [],                   // Abrams
-        fencer: [],                  // Apollo
-        baba: [],                    // Baba
-        bebop: [],                   // Bebop
-        punkgoat: [],                // Billy
-        nano: [],                    // Calico
-        unicorn: [],                 // Celeste
-        deadpack: [],                // Deadman Danny
-        drifter: [],                 // Drifter
-        dynamo: [],                  // Dynamo
-        necro: [],                   // Graves
-        orion: [],                   // Grey Talon
-        haze: [],                    // Haze
-        astro: [],                   // Holliday
-        inferno: [],                 // Infernus
-        tengu: [],                   // Ivy
-        kelvin: [],                  // Kelvin
-        ghost: [],                   // Lady Geist
-        lash: [],                    // Lash
-        forge: [],                   // McGinnis
-        vampirebat: [],              // Mina
-        mirage: [],                  // Mirage
-        krill: [],                   // Mo & Krill
-        nurse: [],                   // Nurse Harrow
-        bookworm: [],                // Paige
-        chrono: [],                  // Paradox
-        synth: [],                   // Pocket
-        ratking: [],                 // Rat King
-        familiar: [],                // Rem
-        gigawatt: [],                // Seven
-        shiv: [],                    // Shiv
-        werewolf: [],                // Silver
-        magician: [],                // Sinclair
-        chessmaster: ["Checkmate"],  // Solomon
-        doorman: [],                 // The Doorman
-        priest: [],                  // Venator
-        frank: [],                   // Victor
-        hornet: [],                  // Vindicta
-        artist: [],                  // Violet
-        viscous: [],                 // Viscous
-        viper: [],                   // Vyper
-        warden: [],                  // Warden
-        wraith: [],                  // Wraith
-        yamato: [],                  // Yamato
-    };
-
     // Defaults. UMM can override the first three at runtime (see `settings` below).
     const CONFIG = {
         ENABLED: true,
 
-        // "all" or "team". The mod refuses to send if chat opens on a different channel.
+        // "all" or "team". Nothing is sent if chat opens on a different channel.
+        /** @type {ChatChannel} */
         CHANNEL: "all",
 
         // Kills within this window after a sent message are ignored, so a multikill
@@ -71,24 +28,10 @@
         // Used while #damageImpactInfo doesn't exist (menus, loading screens).
         IDLE_POLL_SECONDS: 1.0,
 
-        // Delays between attempts to submit after opening chat. First one is next frame.
-        RETRY_DELAYS: [0, 0.016, 0.033, 0.05, 0.1, 0.2],
-        // Frames the chat box must look ready before we submit.
-        CONFIRM_FRAMES: 1,
-
-        // true: log to the console / Panorama debugger with a [WellPlayed] prefix.
-        DEBUG: true,
+        // true: log to the console with a [Tangerie] prefix. `deno task dev` builds turn
+        // this on; leave it false here so release builds stay quiet.
+        DEBUG: false,
     };
-
-    // Console commands that open each channel, tried in order until one works.
-    // `say_chat_team` is confirmed by several mods; `say_chat` for all-chat is what
-    // Well-Played-On-Kill ships with. The others are fallbacks.
-    // targetClass is the class the chat panel gets for that channel.
-    const CHANNELS = {
-        all: { commands: ["say_chat", "say_chat_all"], targetClass: "ChatTarget_GameAll" },
-        team: { commands: ["say_chat_team"], targetClass: "ChatTarget_GameAllies" },
-    };
-    const OTHER_TARGET_CLASSES = ["ChatTarget_GameAll", "ChatTarget_GameAllies", "ChatTarget_Team", "ChatTarget_Party"];
 
     // Marks a kill panel as already handled. Stored as a property on the panel itself
     // because panels get recycled for the next damage popup (see scanKills).
@@ -105,45 +48,23 @@
         cooldownSeconds: CONFIG.COOLDOWN_SECONDS,
     };
 
-    function currentChannel() {
-        return CHANNELS[settings.channel] || CHANNELS.all;
-    }
-
     /**
      * @type {{
      *     damageInfo: Panel | null,
-     *     chatInput: TextEntry | null,
-     *     chatTargetLabel: Panel | null,
      *     heroShop: Panel | null,
-     *     message: string,
      *     primed: boolean,
-     *     sending: boolean,
      *     cooldownUntil: number,
-     *     attempt: number,
-     *     readyFrames: number,
-     *     commandIndex: number,
-     *     commandConfirmed: boolean,
      * }}
      */
     const state = {
         damageInfo: null,
-        chatInput: null,
-        chatTargetLabel: null,
         heroShop: null,
-
-        // The kill line being sent right now.
-        message: "",
 
         // false until the first scan finishes. Kills already on screen when the
         // script (re)loads are marked handled but not sent.
         primed: false,
 
-        sending: false,
         cooldownUntil: 0,
-        attempt: 0,
-        readyFrames: 0,
-        commandIndex: 0,
-        commandConfirmed: false,
     };
 
     // ------------------------------------------------------------------ helpers
@@ -191,6 +112,30 @@
         }
     }
 
+    // ------------------------------------------------------------------ one copy only
+
+    // If the HUD reloads, or two copies of this mod are installed, two poll loops could
+    // run at once and send twice. Each copy claims a generation number in a store shared
+    // across scripts; a loop stops when it sees a newer generation.
+    // GameUI.CustomUIConfig() isn't available everywhere, hence the fallback.
+    function getSharedStore() {
+        try {
+            if(typeof GameUI !== "undefined" && GameUI && GameUI.CustomUIConfig) {
+                return GameUI.CustomUIConfig();
+            }
+        } catch {}
+        globalThis.__checkmate = globalThis.__checkmate || {};
+        return globalThis.__checkmate;
+    }
+
+    const store = getSharedStore();
+    const generation = ((store.checkmate || 0) + 1);
+    store.checkmate = generation;
+
+    function isRetired() {
+        return !isValid(CTX) || store.checkmate !== generation;
+    }
+
     // ------------------------------------------------------------------ hero
 
     // The player APIs (Game / Players) return false in this context, and the hero portraits
@@ -221,177 +166,39 @@
         return state.heroShop;
     }
 
-    // The KILL_LINES key of the hero you're playing, or null if the shop can't be found or
-    // the hero isn't in KILL_LINES (a hero added after this list was made).
-    function detectHero() {
+    // The kill_lines.js key of the hero you're playing, or null if the shop can't be found
+    // or the hero isn't listed (a hero added after the list was made).
+    function detectHero(killLines) {
         const shop = findHeroShop();
         if(!shop) {
             log("hero: shop panel not found");
             return null;
         }
-        for(const hero in KILL_LINES) {
+        for(const hero in killLines) {
             if(hasClass(shop, "hero_" + hero)) {
                 log("hero: " + hero);
                 return hero;
             }
         }
-        log("hero: not in KILL_LINES");
+        log("hero: not in kill_lines.js");
         return null;
-    }
-
-    // ------------------------------------------------------------------ one copy only
-
-    // If the HUD reloads, or two copies of this mod are installed, two poll loops could
-    // run at once and send twice. Each copy claims a generation number in a store shared
-    // across scripts; a loop stops when it sees a newer generation.
-    // GameUI.CustomUIConfig() isn't available everywhere, hence the fallback.
-    function getSharedStore() {
-        try {
-            if(typeof GameUI !== "undefined" && GameUI && GameUI.CustomUIConfig) {
-                return GameUI.CustomUIConfig();
-            }
-        } catch {}
-        globalThis.__checkmate = globalThis.__checkmate || {};
-        return globalThis.__checkmate;
-    }
-
-    const store = getSharedStore();
-    const generation = ((store.checkmate || 0) + 1);
-    store.checkmate = generation;
-
-    function isRetired() {
-        return !isValid(CTX) || store.checkmate !== generation;
-    }
-
-    // ------------------------------------------------------------------ chat
-
-    function findChatPanels() {
-        if(isValid(state.chatInput) && isValid(state.chatTargetLabel)) {
-            return true;
-        }
-        state.chatInput = /** @type {TextEntry | null} */ (lookup("ChatInput"));
-        state.chatTargetLabel = lookup("ChatTargetLabel");
-        return !!(state.chatInput && state.chatTargetLabel);
-    }
-
-    // The channel shows up as a class on one of the chat label's ancestors, e.g.
-    // ChatTarget_GameAll. We check classes, not the label text, because the text is
-    // translated and "(ALL)" won't match on a non-English client.
-    function isTargetingChannel() {
-        let cursor = state.chatTargetLabel;
-        for(let depth = 0; isValid(cursor) && depth < 20; depth++) {
-            if(hasClass(cursor, currentChannel().targetClass)) {
-                return true;
-            }
-            for(const other of OTHER_TARGET_CLASSES) {
-                if(other !== currentChannel().targetClass && hasClass(cursor, other)) {
-                    return false;
-                }
-            }
-            cursor = cursor.GetParent();
-        }
-        return false;
-    }
-
-    function openChat() {
-        const command = currentChannel().commands[state.commandIndex];
-        log("opening chat with `" + command + "`");
-        try {
-            $.DispatchEvent("CitadelConCommand", command);
-        } catch {}
-    }
-
-    function closeChat(input) {
-        try {
-            $.DispatchEvent("CitadelChatInputBlur", input);
-        } catch {}
-        try {
-            $.DispatchEvent("DropInputFocus", input);
-        } catch {}
-    }
-
-    function submit() {
-        const input = state.chatInput;
-        if(!isValid(input)) {
-            state.sending = false;
-            return;
-        }
-        try {
-            input.text = state.message;
-            $.DispatchEvent("CitadelChatInputSubmitted", input);
-            input.text = "";
-        } catch(e) {
-            log("submit failed: " + e);
-            state.sending = false;
-            return;
-        }
-
-        closeChat(input);
-        // This command worked, so stop trying the fallbacks for the rest of the session.
-        state.commandConfirmed = true;
-        state.sending = false;
-        log("sent \"" + state.message + "\"");
-    }
-
-    // Called repeatedly after openChat() until the chat box is ready or we give up.
-    function trySubmit() {
-        if(isRetired()) {
-            return;
-        }
-
-        if(findChatPanels() && isTargetingChannel()) {
-            if(state.readyFrames >= CONFIG.CONFIRM_FRAMES) {
-                submit();
-                return;
-            }
-            state.readyFrames++;
-        } else {
-            state.readyFrames = 0;
-        }
-
-        state.attempt++;
-        if(state.attempt < CONFIG.RETRY_DELAYS.length) {
-            $.Schedule(CONFIG.RETRY_DELAYS[state.attempt], trySubmit);
-            return;
-        }
-
-        // This command never got us the right channel. Try the next one.
-        if(!state.commandConfirmed && state.commandIndex < currentChannel().commands.length - 1) {
-            state.commandIndex++;
-            state.attempt = 0;
-            state.readyFrames = 0;
-            openChat();
-            $.Schedule(CONFIG.RETRY_DELAYS[0], trySubmit);
-            return;
-        }
-
-        log("gave up: chat never opened on the " + settings.channel + " channel");
-        if(isValid(state.chatInput)) {
-            closeChat(state.chatInput);
-        }
-        state.sending = false;
-    }
-
-    function sendMessage(message) {
-        state.message = message;
-        state.sending = true;
-        state.attempt = 0;
-        state.readyFrames = 0;
-        openChat();
-        $.Schedule(CONFIG.RETRY_DELAYS[0], trySubmit);
     }
 
     // ------------------------------------------------------------------ kills
 
-    function onKill() {
+    /**
+     * @param {Record<string, string[]>} killLines
+     * @param {ModChat} chat
+     */
+    function onKill(killLines, chat) {
         if(!settings.enabled) {
             log("kill, but disabled in settings");
             return;
         }
 
         // Unknown hero sends nothing, same as a hero with no lines.
-        const hero = detectHero();
-        const lines = hero ? KILL_LINES[hero] : [];
+        const hero = detectHero(killLines);
+        const lines = hero ? killLines[hero] : [];
         if(lines.length === 0) {
             log("kill, but no lines for " + (hero || "this hero"));
             return;
@@ -402,7 +209,7 @@
             log("kill during cooldown, not sending");
             return;
         }
-        if(state.sending) {
+        if(chat.isSending()) {
             log("kill while a message is still sending, not sending");
             return;
         }
@@ -411,7 +218,10 @@
         // same moment can't queue up behind the first one.
         state.cooldownUntil = now + settings.cooldownSeconds;
         log("kill");
-        sendMessage(lines[Math.floor(Math.random() * lines.length)]);
+        chat.send(lines[Math.floor(Math.random() * lines.length)], settings.channel, {
+            log,
+            alive: () => !isRetired(),
+        });
     }
 
     function findDamageInfo() {
@@ -421,15 +231,20 @@
         return state.damageInfo;
     }
 
-    function scanKills() {
+    /**
+     * @param {Record<string, string[]>} killLines
+     * @param {ModChat} chat
+     */
+    function scanKills(killLines, chat) {
         if(isRetired()) {
             log("newer copy running or HUD unloaded, stopping");
             return;
         }
+        const next = () => scanKills(killLines, chat);
 
         const info = findDamageInfo();
         if(!info) {
-            $.Schedule(CONFIG.IDLE_POLL_SECONDS, scanKills);
+            $.Schedule(CONFIG.IDLE_POLL_SECONDS, next);
             return;
         }
 
@@ -454,118 +269,23 @@
 
             popup[HANDLED] = true;
             if(state.primed) {
-                onKill();
+                onKill(killLines, chat);
             }
         }
 
         state.primed = true;
-        $.Schedule(CONFIG.POLL_SECONDS, scanKills);
+        $.Schedule(CONFIG.POLL_SECONDS, next);
     }
 
     // ------------------------------------------------------------------ UMM settings
 
-    // UMM and this script live in different JS contexts and share nothing, so they talk
-    // over ClientUI_FireOutput, the one event that reaches every context, using JSON:
-    //   UMM -> mods   {umm:1, t:"hello"}                       "announce yourselves"
-    //   mod -> UMM    {umm:1, t:"register", id, name, settings, values}
-    //   UMM -> mod    {umm:1, t:"set", id, key, value}          one per setting, on
-    //                                                           register and on change
-    // Either side can load first: we register on boot, UMM says hello on its boot.
-    // If UMM isn't installed, nobody answers and the defaults stay.
-
-    const UMM_PROTOCOL = 1;
-    const UMM_ID = "checkm8";
-
-    // ---- Examples: one of every UMM input type
-    //
-    // These do nothing except log their value, so you can see what each control looks
-    // like and what UMM sends back. Copy the one you need into a real setting.
-    //
-    //   type      value sent in `set`          notes
-    //   toggle    true / false                 may arrive as "1"/"0" after a restart
-    //   slider    number                       min/max/step/unit; may arrive as a string
-    //   select    the chosen option's `value`  `sort: true` orders options by label
-    //   select    same                         `icons: "hero"` + `img` per option shows portraits
-    //   checks    true / false PER OPTION      each option has its own id and its own `set`
-    //   group     (nothing)                    section header
-    //   export    (nothing)                    copy box for ALL of UMM's settings, not just ours
-    //   import    (nothing)                    paste box that applies an exported string
-    //
-    // UMM has no free-text input.
-
-    // const EXAMPLE_SETTINGS = [
-    //     { type: "group", label: "Examples (every input type, these do nothing)" },
-    //     {
-    //         id: "example_toggle", type: "toggle", label: "Toggle",
-    //         description: "On/off. Sends true or false.",
-    //         default: false,
-    //     },
-    //     {
-    //         id: "example_slider", type: "slider", label: "Slider",
-    //         description: "A number between min and max in steps. `unit` is shown after the value.",
-    //         min: 0, max: 10, step: 0.5, unit: "s",
-    //         default: 2.5,
-    //     },
-    //     {
-    //         id: "example_select", type: "select", label: "Select",
-    //         description: "Pick one. Sends the option's value, not its label. Sorted A-Z by label.",
-    //         sort: true,
-    //         default: "medium",
-    //         options: [
-    //             { value: "small", label: "Small" },
-    //             { value: "medium", label: "Medium" },
-    //             { value: "large", label: "Large" },
-    //         ],
-    //     },
-    //     {
-    //         id: "example_hero", type: "select", label: "Select with hero icons",
-    //         description: "icons: \"hero\" adds a portrait from images/heroes/<img>_sm_psd.",
-    //         icons: "hero",
-    //         default: "haze",
-    //         options: [
-    //             { value: "archer", label: "Grey Talon", img: "archer" },
-    //             { value: "haze", label: "Haze", img: "haze" },
-    //             { value: "warden", label: "Warden", img: "warden" },
-    //             { value: "wraith", label: "Wraith", img: "wraith" },
-    //         ],
-    //     },
-    //     {
-    //         id: "example_checks", type: "checks", label: "Checks",
-    //         description: "Several on/off boxes in one row. Each box is its own setting with its own id.",
-    //         options: [
-    //             { id: "example_check_kills", label: "Kills", default: true },
-    //             { id: "example_check_assists", label: "Assists", default: false },
-    //             { id: "example_check_objectives", label: "Objectives", default: false },
-    //         ],
-    //     },
-    //     {
-    //         id: "example_export", type: "export", label: "Export",
-    //         description: "Copies ALL your UMM settings (every mod) as text. Same box as on UMM's General tab.",
-    //     },
-    //     {
-    //         id: "example_import", type: "import", label: "Import",
-    //         description: "Paste an exported string to apply it.",
-    //     },
-    // ];
-
-    // // Current example values, keyed by the id UMM sends in `set`.
-    // // Checks options are keyed by each option's id, not the row's id.
-    // const examples = {
-    //     example_toggle: false,
-    //     example_slider: 2.5,
-    //     example_select: "medium",
-    //     example_hero: "haze",
-    //     example_check_kills: true,
-    //     example_check_assists: false,
-    //     example_check_objectives: false,
-    // };
-
-    function ummManifest() {
-        return {
-            umm: UMM_PROTOCOL,
-            t: "register",
-            id: UMM_ID,
+    /** @param {ModUmm} umm */
+    function registerSettings(umm) {
+        umm.register({
+            id: "checkm8",
             name: "Checkm8",
+            log,
+            alive: () => !isRetired(),
             settings: [
                 // "group" is a section header. No id, no value.
                 { type: "group", label: "Checkm8" },
@@ -589,95 +309,42 @@
                     min: 1, max: 15, step: 1, unit: "s",
                     default: CONFIG.COOLDOWN_SECONDS,
                 },
-
-                // ...EXAMPLE_SETTINGS,
             ],
-            // Our current values. UMM prefers what it already has saved.
-            values: {
+            values: () => ({
                 enabled: settings.enabled,
                 channel: settings.channel,
                 cooldown: settings.cooldownSeconds,
-                // ...examples,
+            }),
+            onSet(key, value) {
+                if(key === "enabled") {
+                    settings.enabled = umm.toBool(value);
+                } else if(key === "channel") {
+                    if(value === "all" || value === "team") {
+                        settings.channel = value;
+                    }
+                } else if(key === "cooldown") {
+                    const seconds = Number(value);
+                    if(isFinite(seconds) && seconds >= 0) {
+                        settings.cooldownSeconds = seconds;
+                    }
+                }
             },
-        };
+        });
     }
-
-    function ummRegister() {
-        try {
-            $.DispatchEvent("ClientUI_FireOutput", JSON.stringify(ummManifest()));
-        } catch {}
-    }
-
-    // Values restored from UMM's storage can arrive as strings ("1", "0", "5"),
-    // so coerce instead of trusting the type.
-    function toBool(value) {
-        return value === true || value === 1 || value === "1" || value === "true";
-    }
-
-    function applySetting(key, value) {
-        if(key === "enabled") {
-            settings.enabled = toBool(value);
-        } else if(key === "channel") {
-            const next = String(value);
-            if(CHANNELS[next] && next !== settings.channel) {
-                settings.channel = next;
-                // The confirmed open command belonged to the old channel.
-                state.commandIndex = 0;
-                state.commandConfirmed = false;
-            }
-        } else if(key === "cooldown") {
-            const seconds = Number(value);
-            if(isFinite(seconds) && seconds >= 0) {
-                settings.cooldownSeconds = seconds;
-            }
-        } 
-        // else if(Object.prototype.hasOwnProperty.call(examples, key)) {
-        //     // Coerce to the type the default has: UMM may send "1", "2.5" etc.
-        //     const current = examples[key];
-        //     if(typeof current === "boolean") {
-        //         examples[key] = toBool(value);
-        //     } else if(typeof current === "number") {
-        //         const n = Number(value);
-        //         if(isFinite(n)) {
-        //             examples[key] = n;
-        //         }
-        //     } else {
-        //         examples[key] = String(value);
-        //     }
-        // } 
-        else {
-            return;
-        }
-        log("setting " + key + " = " + JSON.stringify(value));
-    }
-
-    function onUmmMessage(payload) {
-        if(isRetired() || typeof payload !== "string" || payload.indexOf("\"umm\"") === -1) {
-            return;
-        }
-
-        let message;
-        try {
-            message = JSON.parse(payload);
-        } catch {
-            return;
-        }
-        if(!message || message.umm !== UMM_PROTOCOL) {
-            return;
-        }
-
-        if(message.t === "hello") {
-            ummRegister();
-        } else if(message.t === "set" && message.id === UMM_ID) {
-            applySetting(message.key, message.value);
-        }
-    }
-
-    $.RegisterForUnhandledEvent("ClientUI_FireOutput", onUmmMessage);
 
     // ------------------------------------------------------------------ start
 
+    // Each of these comes from another script in the same layout. If one is missing, the
+    // includes are wrong (run `deno task pull`): say so instead of failing silently.
+    const killLines = $.ModKillLines;
+    const chat = $.ModChat;
+    const umm = $.ModUmm;
+    if(!killLines || !chat || !umm || !$.ModHudLookup) {
+        $.Msg("[Tangerie] not started: kill_lines.js, chat.js, umm.js and hud_lookup.js must be included before checkm8.js");
+        return;
+    }
+
     log("loaded (generation " + generation + ")");
-    ummRegister();
-    scanKills();
+    registerSettings(umm);
+    scanKills(killLines, chat);
 })();
