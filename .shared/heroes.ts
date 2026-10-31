@@ -53,3 +53,26 @@ export const HERO_NAMES : Record<string, string> = {
 export function heroName(hero : string) : string {
     return HERO_NAMES[hero] || hero;
 }
+
+// Some languages prefix a grammatical gender ("#|f|#Paige"); drop it before comparing.
+// Case is ignored too: the top bar shows names in capitals ("SOLOMON").
+function normalizeName(name : string) : string {
+    return name.replace(/^#\|[a-z]+\|#/i, "").trim().toLowerCase();
+}
+
+/**
+ * Internal hero name for a display name shown in the HUD, or null if none match. Compares
+ * against "#hero_<name>" localised in the client's own language, so it isn't English-only.
+ */
+export function heroFromName(name : string) : string | null {
+    const wanted = normalizeName(name);
+    if(!wanted) {
+        return null;
+    }
+    for(const hero in HERO_NAMES) {
+        if(normalizeName($.Localize("#hero_" + hero)) === wanted) {
+            return hero;
+        }
+    }
+    return null;
+}

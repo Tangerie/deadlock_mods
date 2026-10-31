@@ -14,7 +14,7 @@ export const KILL_LINES : Record<string, string[]> = {
     nano: [],                    // Calico
     unicorn: [],                 // Celeste
     deadpack: ["This kill was brought to you by Fairfax Industries"],                // Deadman Danny
-    drifter: [],                 // Drifter
+    drifter: ["You just got dwifta'd"],                 // Drifter
     dynamo: [],                  // Dynamo
     necro: [],                   // Graves
     orion: [],                   // Grey Talon
