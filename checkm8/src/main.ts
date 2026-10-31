@@ -3,7 +3,7 @@
 
 import * as chat from "@shared/chat.ts";
 import type { ChatChannel } from "@shared/chat.ts";
-import { heroName } from "@shared/heroes.ts";
+import { HERO_NAMES, heroName } from "@shared/heroes.ts";
 import { find } from "@shared/hud_lookup.ts";
 import { hasClass, isValid } from "@shared/panel.ts";
 import * as umm from "@shared/umm.ts";
@@ -26,6 +26,10 @@ const CONFIG = {
     POLL_SECONDS: 0.01,
     // Used while #damageImpactInfo doesn't exist (menus, loading screens).
     IDLE_POLL_SECONDS: 1.0,
+
+    // TEMPORARY while hero detection is being fixed. false: log "would send: ..." instead of
+    // sending, so kills can be tested without spamming chat.
+    SEND_CHAT: true,
 
     // true: log to the console with a [Tangerie] prefix. `deno task dev` builds turn
     // this on; leave it false here so release builds stay quiet.
@@ -180,14 +184,72 @@ function detectHero() : string | null {
     return heroes[0];
 }
 
-// TEMPORARY probe, logged as "[Tangerie] probe: ..." on each kill. After Paige -> another
-// hero the shop still said hero_bookworm. Is it updated late (on opening the shop?), or does
-// it keep old hero classes? Compare against the ability bar, which is always current.
-function probeHero() : void {
-    for(const shop of findHeroShops()) {
-        const classes = Object.keys(KILL_LINES).filter((hero) => hasClass(shop, "hero_" + hero));
-        log("probe: shop hero classes = " + (classes.join(", ") || "none"));
+// TEMPORARY probe. The shop's hero_* class doesn't always follow a hero change (Paige ->
+// another hero still said hero_bookworm). DEBUG builds poll every hero source below and log
+// "[Tangerie] probe: <source> = <value>" whenever one changes, so switching heroes in the
+// sandbox shows which source keeps up. The ability bar is the reference: it's always current.
+const PROBE_SECONDS = 1.0;
+
+// Your own portrait in the top bar: the CitadelHudTopBarPlayer the game gives a LocalPlayer
+// class. Its labels show your name, hero name and kills (citadel_hud_top_bar_player.xml).
+function findLocalTopBar() : Panel | null {
+    const hud = lookup("Hud");
+    if(!hud) {
+        return null;
     }
+    for(const panel of hud.FindChildrenWithClassTraverse("LocalPlayer")) {
+        if(isValid(panel) && isValid(panel.FindChildTraverse("PlayerNameNWContainer"))) {
+            return panel;
+        }
+    }
+    return null;
+}
+
+function labelText(parent : Panel, className : string) : string {
+    const label = parent.FindChildrenWithClassTraverse(className)[0];
+    return isValid(label) ? (label as Label).text : "?";
+}
+
+// Some languages prefix a grammatical gender ("#|f|#Paige"); drop it before comparing.
+function normalizeName(name : string) : string {
+    return name.replace(/^#\|[a-z]+\|#/i, "").trim().toLowerCase();
+}
+
+// Matches a hero name label against "#hero_<key>" localised in the client's own language,
+// so it works on any language, not just English.
+function heroFromName(name : string) : string | null {
+    const wanted = normalizeName(name);
+    for(const hero in HERO_NAMES) {
+        if(normalizeName($.Localize("#hero_" + hero)) === wanted) {
+            return hero;
+        }
+    }
+    return null;
+}
+
+function probeSources() : Record<string, string> {
+    const shops = findHeroShops();
+    const sources : Record<string, string> = {};
+
+    const topBar = findLocalTopBar();
+    if(topBar) {
+        const name = labelText(topBar, "HeroName");
+        sources["top bar hero"] = name + " -> " + (heroFromName(name) || "no match");
+        sources["top bar player"] = labelText(topBar, "PlayerName");
+        sources["top bar kills"] = labelText(topBar, "kills");
+    } else {
+        sources["top bar hero"] = "no LocalPlayer panel";
+    }
+
+    sources["shop classes"] = shops
+        .map((shop) => Object.keys(HERO_NAMES).filter((hero) => hasClass(shop, "hero_" + hero)).join("+") || "none")
+        .join(" | ") || "no shop";
+
+    // The shop's "{s:hero_name}'s Recommended Mods" header. Display name, so English only.
+    sources["shop hero_name"] = shops.map((shop) => {
+        const name = $.Localize("{s:hero_name}", shop);
+        return name && name.indexOf("{") === -1 ? name : "unset";
+    }).join(" | ") || "no shop";
 
     const third = lookup("slot_signature_3");
     const abilities = third ? third.GetParent() : null;
@@ -197,25 +259,49 @@ function probeHero() : void {
         const label = isValid(panel) ? panel.FindChildrenWithClassTraverse("ability_name")[0] : null;
         names.push(isValid(label) ? (label as Label).text : "?");
     }
-    log("probe: ability bar = " + (names.join(", ") || "not found"));
+    sources["ability bar"] = names.join(", ") || "not found";
 
     const hud = lookup("Hud");
-    if(hud) {
-        const found = Object.keys(KILL_LINES)
-            .map((hero) => [hero, hud.FindChildrenWithClassTraverse("hero_" + hero).length] as const)
-            .filter(([, count]) => count > 0)
-            .map(([hero, count]) => hero + " x" + count);
-        log("probe: hero_* classes under Hud = " + (found.join(", ") || "none"));
+    sources["hero_* under Hud"] = !hud ? "no Hud" : Object.keys(HERO_NAMES)
+        .map((hero) => [hero, hud.FindChildrenWithClassTraverse("hero_" + hero).length] as const)
+        .filter(([, count]) => count > 0)
+        .map(([hero, count]) => hero + " x" + count)
+        .join(", ") || "none";
+
+    return sources;
+}
+
+const probed : Record<string, string> = {};
+
+function probeHero(all : boolean) : void {
+    let sources : Record<string, string>;
+    try {
+        sources = probeSources();
+    } catch(e) {
+        log("probe: failed " + e);
+        return;
     }
+    for(const source in sources) {
+        if(all || probed[source] !== sources[source]) {
+            log("probe: " + source + " = " + sources[source]);
+        }
+        probed[source] = sources[source];
+    }
+}
+
+function watchHero() : void {
+    if(isRetired()) {
+        return;
+    }
+    probeHero(false);
+    $.Schedule(PROBE_SECONDS, watchHero);
 }
 
 // ------------------------------------------------------------------ kills
 
 function onKill() : void {
-    try {
-        probeHero();
-    } catch(e) {
-        log("probe: failed " + e);
+    if(CONFIG.DEBUG) {
+        probeHero(true);
     }
 
     if(!settings.enabled) {
@@ -248,8 +334,14 @@ function onKill() : void {
     // Cooldown starts at the kill, not when the message lands, so kills in the
     // same moment can't queue up behind the first one.
     state.cooldownUntil = now + settings.cooldownSeconds;
+    const line = lines[Math.floor(Math.random() * lines.length)];
+    if(!CONFIG.SEND_CHAT) {
+        // Logged even without DEBUG, so release builds show it in the console too.
+        $.Msg("[Tangerie] would send (" + hero + ", " + settings.channel + "): " + line);
+        return;
+    }
     log("kill");
-    chat.send(lines[Math.floor(Math.random() * lines.length)], settings.channel, hooks);
+    chat.send(line, settings.channel, hooks);
 }
 
 function findDamageInfo() : Panel | null {
@@ -372,3 +464,6 @@ umm.register({
 
 log("loaded " + CONFIG.VERSION + " (generation " + generation + ")");
 scanKills();
+if(CONFIG.DEBUG) {
+    watchHero();
+}
