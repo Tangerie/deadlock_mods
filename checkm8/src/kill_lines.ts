@@ -12,7 +12,7 @@ export const KILL_LINES : Record<string, string[]> = {
     punkgoat: [],                // Billy
     nano: [],                    // Calico
     unicorn: [],                 // Celeste
-    deadpack: [],                // Deadman Danny
+    deadpack: ["This kill was brought to you by Fairfax Industries"],                // Deadman Danny
     drifter: [],                 // Drifter
     dynamo: [],                  // Dynamo
     necro: [],                   // Graves
