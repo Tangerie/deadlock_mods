@@ -4,7 +4,7 @@
 //   deno task pull [mod] --check     don't write, just say whether Valve's layout changed since the last pull
 //
 // Which layouts: every .xml already in <mod>/panorama/layout/ (that's the "host layout").
-// Which scripts: every .js in <mod>/panorama/scripts/, in load order (see scriptNames).
+// Which script: <mod>.js, the bundle of <mod>/src/ (see bundle.ts).
 //
 // Needs Source2Viewer-CLI.exe (the console build of Source 2 Viewer; the Source2Viewer.exe
 // in the CSDK folder is the GUI and can't do this). Found in, in order:
@@ -175,28 +175,9 @@ function findFile(dir : string, fileName : string) : string | null {
 
 const INCLUDE = /^[ \t]*<include\s+src="s2r:\/\/panorama\/scripts\/([^"]+)\.vjs_c"\s*\/>[ \t]*\r?\n/gim;
 
-// Scripts in one layout run in include order and share `$`, which is how they hand each
-// other their $.Mod* objects. So: hud_lookup first (the others use it), then the other
-// shared scripts from .shared/, then the mod's own, and <mod>.js last, since it's the one
-// that starts everything. A-Z within each group.
-function scriptOrder(names : string[], shared : string[], mod : string) : string[] {
-    const sorted = [...names].sort();
-    const isShared = (name : string) => shared.includes(name);
-    return [
-        ...sorted.filter((name) => name === "hud_lookup"),
-        ...sorted.filter((name) => name !== "hud_lookup" && isShared(name)),
-        ...sorted.filter((name) => name !== "hud_lookup" && !isShared(name) && name !== mod),
-        ...sorted.filter((name) => name === mod),
-    ];
-}
-
+// A mod ships one script, <mod>.js, bundled from its src/ (see bundle.ts).
 function scriptNames(mod : string) : string[] {
-    const jsNames = (dir : string) => exists(dir)
-        ? [...Deno.readDirSync(dir)]
-            .filter((entry) => entry.isFile && entry.name.endsWith(".js"))
-            .map((entry) => entry.name.slice(0, -3))
-        : [];
-    return scriptOrder(jsNames(join(root, mod, "panorama", "scripts")), jsNames(join(root, ".shared")), mod);
+    return [mod];
 }
 
 // Removes the includes we add (any script this mod ships), leaves Valve's own alone.

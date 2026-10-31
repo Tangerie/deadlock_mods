@@ -1,5 +1,5 @@
 // deno lint plugin: Panorama rules that deno lint doesn't have built in.
-// Only applies to files under */panorama/scripts/.
+// Only applies to code that runs in Panorama: mod sources (<mod>/src/) and .shared/.
 //
 //   panorama/no-browser-globals  window, document, setTimeout... don't exist in Panorama.
 //                                (deno check also catches these; this gives a useful message.)
@@ -56,7 +56,7 @@ interface LintPlugin {
 }
 
 function isPanoramaScript(filename : string) : boolean {
-    return /[\\/]panorama[\\/]scripts[\\/]/.test(filename);
+    return /[\\/](?:src|\.shared)[\\/]/.test(filename) && !/[\\/]\.tooling[\\/]/.test(filename);
 }
 
 const plugin : LintPlugin = {

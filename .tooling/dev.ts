@@ -4,7 +4,8 @@
 //   deno task log [mod]        just follow the log (game already running)
 //   deno task build [mod]      release VPK at tools/builds/<mod>.vpk with DEBUG: false
 //
-// Both builds compile a staged copy with DEBUG set for them; the source itself is untouched.
+// Both builds bundle <mod>/src/main.ts into a staged copy of the mod (see bundle.ts) with DEBUG
+// set for them, and compile that; the source itself is untouched.
 //
 // Options (after the task name):
 //   --all              show every log line, not just the filtered ones
@@ -16,6 +17,7 @@
 
 import { dirname, fromFileUrl, join } from "@std/path";
 import { bold, cyan, gray, green, red, yellow } from "@std/fmt/colors";
+import { bundleMod, outputOf } from "./bundle.ts";
 
 // ------------------------------------------------------------------ settings
 
@@ -323,51 +325,53 @@ function copyDir(from : string, to : string) : void {
     }
 }
 
-// Copy the mod with every `DEBUG:` setting in its scripts set to `debug`.
-// Source keeps DEBUG false; dev builds stage it on, release builds off.
-function stage(mod : string, debug : boolean) : string {
+// Copy the mod (minus src/) to a staging folder and bundle src/main.ts into it, with DEBUG
+// set to `debug`. Source keeps DEBUG false; dev builds stage it on, release builds off.
+async function stage(mod : string, debug : boolean) : Promise<string> {
     const stage = join(buildsDir, ".stage", mod);
     try {
         Deno.removeSync(stage, { recursive: true });
     } catch {}
-    copyDir(join(root, mod), stage);
-
-    const scripts = join(stage, "panorama", "scripts");
-    if(exists(scripts)) {
-        for(const entry of Deno.readDirSync(scripts)) {
-            if(!entry.name.endsWith(".js")) {
-                continue;
-            }
-            const path = join(scripts, entry.name);
-            const before = Deno.readTextFileSync(path);
-            const after = before.replace(/^(\s*DEBUG\s*:\s*)(?:true|false)\b/gm, "$1" + debug);
-            if(after !== before) {
-                Deno.writeTextFileSync(path, after);
-                step("DEBUG " + (debug ? "on" : "off") + " in " + entry.name);
-            }
+    Deno.mkdirSync(stage, { recursive: true });
+    for(const entry of Deno.readDirSync(join(root, mod))) {
+        if(entry.isDirectory && entry.name !== "src") {
+            copyDir(join(root, mod, entry.name), join(stage, entry.name));
         }
     }
+
+    try {
+        await bundleMod(mod, outputOf(mod, join(buildsDir, ".stage")), debug);
+    } catch(e) {
+        fail((e as Error).message);
+    }
+    step("bundled " + mod + "/src with DEBUG " + (debug ? "on" : "off"));
     return stage;
 }
 
 // ------------------------------------------------------------------ log
 
-// The mod's own log prefixes, taken from its source: $.Msg("[WellPlayed] " + ...) -> WellPlayed.
+// The mod's own log prefixes, taken from its source: $.Msg("[Tangerie] " + ...) -> Tangerie.
 export function modPrefixes(mod : string, modsRoot = root) : string[] {
     const prefixes = new Set<string>();
-    const scripts = join(modsRoot, mod, "panorama", "scripts");
-    if(!exists(scripts)) {
-        return [];
-    }
-    for(const entry of Deno.readDirSync(scripts)) {
-        if(!entry.name.endsWith(".js") || entry.name === "hud_lookup.js") {
-            continue;
+    const scan = (dir : string) => {
+        if(!exists(dir)) {
+            return;
         }
-        const source = Deno.readTextFileSync(join(scripts, entry.name));
-        for(const match of source.matchAll(/\$\.(?:Msg|Warning)\(\s*["'`]\[([^\]"'`]+)\]/g)) {
-            prefixes.add(match[1]);
+        for(const entry of Deno.readDirSync(dir)) {
+            const path = join(dir, entry.name);
+            if(entry.isDirectory) {
+                scan(path);
+                continue;
+            }
+            if(!entry.name.endsWith(".ts")) {
+                continue;
+            }
+            for(const match of Deno.readTextFileSync(path).matchAll(/\$\.(?:Msg|Warning)\(\s*["'`]\[([^\]"'`]+)\]/g)) {
+                prefixes.add(match[1]);
+            }
         }
-    }
+    };
+    scan(join(modsRoot, mod, "src"));
     return [...prefixes];
 }
 
@@ -536,7 +540,7 @@ async function main() : Promise<void> {
     if(args.mode === "release") {
         const output = join(buildsDir, mod + ".vpk");
         step("release build of " + mod);
-        await compile(mod, output, stage(mod, false));
+        await compile(mod, output, await stage(mod, false));
         Deno.removeSync(join(buildsDir, ".stage"), { recursive: true });
         step("done: " + output);
         return;
@@ -555,7 +559,7 @@ async function main() : Promise<void> {
     await closeGame();
     ensureModsMounted(paths);
     step("building " + mod + " -> " + output);
-    await compile(mod, output, stage(mod, true));
+    await compile(mod, output, await stage(mod, true));
     Deno.removeSync(join(buildsDir, ".stage"), { recursive: true });
 
     // Fresh log per run, so old lines don't scroll past.

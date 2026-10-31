@@ -7,13 +7,15 @@ tools/vtex_tool.bat, tools/vtex_tool.ps1
     Modified: build_mod.ps1 also hides the types and test folders from
     the mod picker.
 
-.shared/hud_lookup.js (and copies under */panorama/scripts/hud_lookup.js)
+.shared/hud_lookup.ts
     From https://github.com/Predi-i/Deadlock-UI-Mods tools/hud_lookup.js
-    (Apache-2.0). Unmodified.
+    (Apache-2.0). Modified: ported to a TypeScript module that exports
+    find() instead of setting $.ModHudLookup. Routes and lookup logic
+    unchanged. Bundled into each mod's script by the build.
 
-well_played/panorama/layout/hud_damage_impact.xml
-    Valve's native Deadlock layout, as published in Predi-i/Deadlock-UI-Mods,
-    with one added <include>.
+checkm8/panorama/layout/hud_damage_impact.xml
+    Valve's native Deadlock layout, exported from the game files, with one
+    added <include>.
 
-The kill-detection and chat-sending technique in well_played is based on
+The kill-detection and chat-sending technique in checkm8 is based on
 Predi-i's Well-Played-On-Kill. The code is a new implementation.

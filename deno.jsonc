@@ -1,19 +1,24 @@
 {
-    // Root config = Panorama. Every */panorama/scripts/*.js and .shared/*.js is checked
+    // Root config = Panorama. Mod sources (<mod>/src/) and .shared/ are TypeScript checked
     // against types/panorama.d.ts with plain ES2021 and nothing else: no Deno, no DOM.
+    // `deno task bundle` turns each mod's src/main.ts into one panorama/scripts/<mod>.js.
     // .tooling/ is a workspace member with normal Deno settings.
     "workspace": ["./.tooling"],
 
     "compilerOptions": {
-        "checkJs": true,
         "lib": ["es2021"],
         "types": ["./types/panorama.d.ts"],
         "strict": false,
         "strictNullChecks": true
     },
 
-    // tools/ is the PowerShell compiler; hud_lookup.js is third-party (Predi-i).
-    "exclude": ["tools/", "**/hud_lookup.js", ".shared/hud_lookup.js"],
+    // Mods import shared code as "@shared/chat.ts" etc.; the bundler inlines it.
+    "imports": {
+        "@shared/": "./.shared/"
+    },
+
+    // tools/ is the PowerShell compiler. */panorama/scripts/ is bundler output.
+    "exclude": ["tools/", "*/panorama/scripts/"],
 
     "lint": {
         // types/panorama.d.ts describes engine APIs that return untyped data (`any`).
@@ -43,9 +48,13 @@
             "description": "lint + check",
             "command": "deno lint && deno check"
         },
+        "bundle": {
+            "description": "Bundle <mod>/src/main.ts into <mod>/panorama/scripts/<mod>.js (DEBUG as in source). For the compiler menu; dev and build bundle by themselves. Usage: deno task bundle [mod]",
+            "command": "deno run --unstable-bundle --allow-read --allow-write .tooling/bundle.ts"
+        },
         "dev": {
-            "description": "Build, install into addons, launch Deadlock with -dev -console -condebug, follow the log. Usage: deno task dev [mod] [--all] [--filter <regex>] [-- <launch flags>]",
-            "command": "deno run --allow-read --allow-write --allow-run=powershell,tasklist .tooling/dev.ts",
+            "description": "Bundle with DEBUG on, build, install into addons, launch Deadlock with -dev -console -condebug, follow the log. Usage: deno task dev [mod] [--all] [--filter <regex>] [-- <launch flags>]",
+            "command": "deno run --unstable-bundle --allow-read --allow-write --allow-run=powershell,tasklist .tooling/dev.ts",
             "dependencies": ["verify"]
         },
         "log": {
@@ -54,16 +63,12 @@
         },
         "build": {
             "description": "Release build with DEBUG off, to tools/builds/<mod>.vpk. Usage: deno task build [mod]",
-            "command": "deno run --allow-read --allow-write --allow-run=powershell .tooling/dev.ts --release",
+            "command": "deno run --unstable-bundle --allow-read --allow-write --allow-run=powershell .tooling/dev.ts --release",
             "dependencies": ["verify"]
         },
         "pull": {
-            "description": "Re-export Valve's current layout from pak01_dir.vpk and re-add the mod's script includes. Usage: deno task pull [mod] [--check]",
+            "description": "Re-export Valve's current layout from pak01_dir.vpk and re-add the mod's script include. Usage: deno task pull [mod] [--check]",
             "command": "deno run --allow-read --allow-write --allow-env=SOURCE2VIEWER_CLI --allow-run .tooling/pull.ts"
-        },
-        "sync": {
-            "description": "Copy .shared/ scripts into every mod that ships them",
-            "command": "deno run --allow-read --allow-write .tooling/sync.ts"
         }
     }
 }

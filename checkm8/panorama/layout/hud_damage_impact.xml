@@ -1,6 +1,6 @@
 <!--
     Copy of Valve's native layout, exported by `deno task pull`.
-    Only change: the script includes (hud_lookup, chat, umm, kill_lines, checkm8). Re-run `deno task pull` after a Deadlock update.
+    Only change: the script includes (checkm8). Re-run `deno task pull` after a Deadlock update.
 -->
 
 <!-- xml reconstructed by Source 2 Viewer 20.1.0.0 - https://valveresourceformat.github.io -->
@@ -10,10 +10,6 @@
 		<include src="s2r://panorama/styles/hud_damage_impact.vcss_c" />
 	</styles>
 	<scripts>
-		<include src="s2r://panorama/scripts/hud_lookup.vjs_c" />
-		<include src="s2r://panorama/scripts/chat.vjs_c" />
-		<include src="s2r://panorama/scripts/umm.vjs_c" />
-		<include src="s2r://panorama/scripts/kill_lines.vjs_c" />
 		<include src="s2r://panorama/scripts/checkm8.vjs_c" />
 	</scripts>
 	<snippets>

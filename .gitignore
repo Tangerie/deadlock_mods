@@ -5,3 +5,6 @@ tools/data/
 # Editor / OS noise
 .DS_Store
 Thumbs.db
+
+# Bundler output (deno task bundle); the source is <mod>/src/
+/*/panorama/scripts/
