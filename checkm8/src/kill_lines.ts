@@ -3,7 +3,8 @@
 //
 // Keys are the game's internal hero names, not display names: the shop panel gets a
 // `hero_<key>` class for the hero you're playing, which is how main.ts tells them apart.
-// The display name (from the English localisation) is in the comment after each.
+// The display name is in the comment after each; the real map is HERO_NAMES in
+// .shared/heroes.ts, which labels each hero's checkbox in the UMM settings.
 export const KILL_LINES : Record<string, string[]> = {
     atlas: [],                   // Abrams
     fencer: [],                  // Apollo

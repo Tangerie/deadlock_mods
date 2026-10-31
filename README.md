@@ -244,6 +244,7 @@ import * as umm from "@shared/umm.ts";
 | `chat.ts` | `send(text, "all" \| "team", hooks)`, `isSending()`, type `ChatChannel` |
 | `umm.ts` | `register({ id, name, settings, values, onSet, ...hooks })`, `toBool(value)` |
 | `panel.ts` | `isValid(panel)`, `hasClass(panel, name)` |
+| `heroes.ts` | `HERO_NAMES` (internal name → display name), `heroName(hero)` |
 | `hooks.ts` | type `Hooks`: `{ log?, alive? }` |
 
 - **`hooks`:** shared modules log only through the `log` you pass them, so they follow your
@@ -272,6 +273,7 @@ when it's installed:
 | Enabled | toggle | on |
 | Channel | All chat / Team chat | All chat |
 | Cooldown | slider, 1–15 s | 3 s |
+| Heroes | checks, one per hero with lines in `kill_lines.ts` | all on |
 
 Setting types UMM understands, for the `settings` list you pass to `umm.register`:
 

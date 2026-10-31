@@ -3,6 +3,7 @@
 
 import * as chat from "@shared/chat.ts";
 import type { ChatChannel } from "@shared/chat.ts";
+import { heroName } from "@shared/heroes.ts";
 import { find } from "@shared/hud_lookup.ts";
 import { hasClass, isValid } from "@shared/panel.ts";
 import * as umm from "@shared/umm.ts";
@@ -42,12 +43,25 @@ const HANDLED = "__checkm8Handled";
 
 const CTX = $.GetContextPanel();
 
+// Heroes that have lines, in kill_lines.ts order. Only these get a checkbox in UMM.
+const HEROES_WITH_LINES = Object.keys(KILL_LINES).filter((hero) => KILL_LINES[hero].length > 0);
+
+// UMM setting id for a hero's checkbox. Prefixed so a hero key can't clash with another setting.
+function heroSettingId(hero : string) : string {
+    return "hero_" + hero;
+}
+
 // Live settings: start as CONFIG, then UMM may change any of them at any time.
 const settings = {
     enabled: CONFIG.ENABLED,
     channel: CONFIG.CHANNEL,
     cooldownSeconds: CONFIG.COOLDOWN_SECONDS,
+    // Per hero, keyed by KILL_LINES key. Every hero with lines starts enabled.
+    heroEnabled: {} as Record<string, boolean>,
 };
+for(const hero of HEROES_WITH_LINES) {
+    settings.heroEnabled[hero] = true;
+}
 
 const state = {
     damageInfo: null as Panel | null,
@@ -212,8 +226,12 @@ function onKill() : void {
     // Unknown hero sends nothing, same as a hero with no lines.
     const hero = detectHero();
     const lines = hero ? KILL_LINES[hero] : [];
-    if(lines.length === 0) {
+    if(!hero || lines.length === 0) {
         log("kill, but no lines for " + (hero || "this hero"));
+        return;
+    }
+    if(!settings.heroEnabled[hero]) {
+        log("kill, but " + hero + " is disabled in settings");
         return;
     }
 
@@ -311,14 +329,31 @@ umm.register({
             min: 1, max: 15, step: 1, unit: "s",
             default: CONFIG.COOLDOWN_SECONDS,
         },
+        // One checkbox per hero with lines. UMM sends each back keyed by the option's id.
+        ...(HEROES_WITH_LINES.length === 0 ? [] : [{
+            id: "heroes", type: "checks", label: "Heroes",
+            description: "Which heroes send their kill lines.",
+            options: HEROES_WITH_LINES.map((hero) => ({
+                id: heroSettingId(hero), label: heroName(hero), default: true,
+            })),
+        }]),
     ],
-    values: () => ({
-        enabled: settings.enabled,
-        channel: settings.channel,
-        cooldown: settings.cooldownSeconds,
-    }),
+    values: () => {
+        const values : Record<string, unknown> = {
+            enabled: settings.enabled,
+            channel: settings.channel,
+            cooldown: settings.cooldownSeconds,
+        };
+        for(const hero of HEROES_WITH_LINES) {
+            values[heroSettingId(hero)] = settings.heroEnabled[hero];
+        }
+        return values;
+    },
     onSet(key, value) {
-        if(key === "enabled") {
+        const hero = HEROES_WITH_LINES.find((hero) => heroSettingId(hero) === key);
+        if(hero) {
+            settings.heroEnabled[hero] = umm.toBool(value);
+        } else if(key === "enabled") {
             settings.enabled = umm.toBool(value);
         } else if(key === "channel") {
             if(value === "all" || value === "team") {
