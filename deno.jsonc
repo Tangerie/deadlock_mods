@@ -1,0 +1,69 @@
+{
+    // Root config = Panorama. Every */panorama/scripts/*.js is checked against
+    // types/panorama.d.ts with plain ES2021 and nothing else: no Deno, no DOM.
+    // test/ and .tooling/ are workspace members with normal Deno settings.
+    "workspace": ["./test", "./.tooling"],
+
+    "compilerOptions": {
+        "checkJs": true,
+        "lib": ["es2021"],
+        "types": ["./types/panorama.d.ts"],
+        "strict": false,
+        "strictNullChecks": true
+    },
+
+    // tools/ is the PowerShell compiler; hud_lookup.js is third-party (Predi-i).
+    "exclude": ["tools/", "**/hud_lookup.js", ".shared/hud_lookup.js"],
+
+    "lint": {
+        // types/panorama.d.ts describes engine APIs that return untyped data (`any`).
+        "exclude": ["types/"],
+        "plugins": ["./.tooling/lint-panorama.ts"],
+        "rules": {
+            // Panorama throws from lots of native calls; `catch {}` is normal.
+            "exclude": ["no-empty"]
+        }
+    },
+
+    // deno fmt would rewrite `if(` to `if (`; formatting is left to you.
+    "fmt": {
+        "exclude": ["**/*"]
+    },
+
+    "tasks": {
+        "lint": {
+            "description": "deno lint + Panorama rules (browser globals, semicolons)",
+            "command": "deno lint"
+        },
+        "check": {
+            "description": "Type-check mods against types/panorama.d.ts, and the tooling",
+            "command": "deno check"
+        },
+        "verify": {
+            "description": "lint + check",
+            "command": "deno lint && deno check"
+        },
+        "dev": {
+            "description": "Build, install into addons, launch Deadlock with -dev -console -condebug, follow the log. Usage: deno task dev [mod] [--all] [--filter <regex>] [-- <launch flags>]",
+            "command": "deno run --allow-read --allow-write --allow-run=powershell,tasklist .tooling/dev.ts",
+            "dependencies": ["verify"]
+        },
+        "log": {
+            "description": "Follow Deadlock's console.log, filtered to your mod, UMM and script errors. Usage: deno task log [mod] [--all] [--filter <regex>]",
+            "command": "deno run --allow-read --allow-run=powershell,tasklist .tooling/dev.ts --log-only"
+        },
+        "build": {
+            "description": "Release build with DEBUG off, to tools/builds/<mod>.vpk. Usage: deno task build [mod]",
+            "command": "deno run --allow-read --allow-write --allow-run=powershell .tooling/dev.ts --release",
+            "dependencies": ["verify"]
+        },
+        "pull": {
+            "description": "Re-export Valve's current layout from pak01_dir.vpk and re-add the mod's script includes. Usage: deno task pull [mod] [--check]",
+            "command": "deno run --allow-read --allow-write --allow-env=SOURCE2VIEWER_CLI --allow-run .tooling/pull.ts"
+        },
+        "sync": {
+            "description": "Copy .shared/ scripts into every mod that ships them",
+            "command": "deno run --allow-read --allow-write .tooling/sync.ts"
+        }
+    }
+}

@@ -1,0 +1,10 @@
+{
+    "recommendations": [
+        "denoland.vscode-deno",
+        "redhat.vscode-xml",
+        "ms-vscode.powershell"
+    ],
+    "unwantedRecommendations": [
+        "dbaeumer.vscode-eslint"
+    ]
+}

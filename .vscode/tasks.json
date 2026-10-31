@@ -1,0 +1,85 @@
+{
+    // Ctrl+Shift+B: deno task dev for the mod you're editing (the top-level folder of the open file).
+    // The compiler waits for a key press when done: press Esc in the terminal to close it.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Dev: build, launch, follow log",
+            "type": "process",
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-NoProfile", "-ExecutionPolicy", "Bypass",
+                    "-Command",
+                    "$mod = ('${relativeFile}' -split '[\\\\/]')[0]; deno task dev $mod"
+                ]
+            },
+            "group": { "kind": "build", "isDefault": true },
+            "presentation": { "panel": "dedicated", "focus": true, "clear": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build current mod",
+            "type": "process",
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-NoProfile", "-ExecutionPolicy", "Bypass",
+                    "-Command",
+                    "$mod = ('${relativeFile}' -split '[\\\\/]')[0]; & '${workspaceFolder}\\tools\\build_mod.ps1' $mod"
+                ]
+            },
+            "group": "build",
+            "presentation": { "panel": "dedicated", "focus": true, "clear": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build (pick mod / settings)",
+            "type": "process",
+            "windows": { "command": "cmd", "args": ["/c", "${workspaceFolder}\\tools\\build_mod.bat"] },
+            "group": "build",
+            "presentation": { "panel": "dedicated", "focus": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Force rebuild current mod",
+            "type": "process",
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-NoProfile", "-ExecutionPolicy", "Bypass",
+                    "-Command",
+                    "$mod = ('${relativeFile}' -split '[\\\\/]')[0]; & '${workspaceFolder}\\tools\\build_mod.ps1' $mod -Force"
+                ]
+            },
+            "group": "build",
+            "presentation": { "panel": "dedicated", "focus": true, "clear": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Verify (lint + types + tests)",
+            "type": "process",
+            "command": "deno",
+            "args": ["task", "verify"],
+            "group": { "kind": "test", "isDefault": true },
+            "presentation": { "clear": true },
+            "problemMatcher": ["$deno"]
+        },
+        {
+            "label": "Test",
+            "type": "process",
+            "command": "deno",
+            "args": ["task", "test"],
+            "group": "test",
+            "presentation": { "clear": true },
+            "problemMatcher": ["$deno"]
+        },
+        {
+            "label": "Sync shared scripts",
+            "type": "process",
+            "command": "deno",
+            "args": ["task", "sync"],
+            "problemMatcher": []
+        }
+    ]
+}

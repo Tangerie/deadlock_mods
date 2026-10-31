@@ -1,0 +1,21 @@
+{
+    // Deno's language server handles JS/TS here, using deno.json:
+    // mod scripts get Panorama types (types/panorama.d.ts), test/ and .tooling/ get Deno's.
+    "deno.enable": true,
+    "deno.lint": true,
+    "deno.config": "./deno.json",
+
+    "files.associations": {
+        "*.vxml": "xml",
+        "*.vjs": "javascript",
+        "*.vcss": "css"
+    },
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    // deno fmt would rewrite `if(` to `if (`.
+    "editor.formatOnSave": false,
+    "css.validate": false,
+    "search.exclude": {
+        "tools/builds": true
+    }
+}

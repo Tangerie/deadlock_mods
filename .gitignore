@@ -1,0 +1,7 @@
+# Compiler output and machine-specific state (CSDK path, build cache, pak-slot registry)
+tools/builds/
+tools/data/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
