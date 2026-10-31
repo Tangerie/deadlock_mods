@@ -2,7 +2,7 @@
 //
 //   deno task dev [mod]        build with DEBUG: true -> install into addons/deadlock_mods_dev -> launch Deadlock -> follow the log
 //   deno task log [mod]        just follow the log (game already running)
-//   deno task build [mod]      release VPK at tools/builds/<mod>.vpk with DEBUG: false
+//   deno task build [mod]      release VPK at tools/builds/<mod>.vpk with DEBUG: false, plus <mod>-<commit>.zip holding it
 //
 // Both builds bundle <mod>/src/main.ts into a staged copy of the mod (see bundle.ts) with DEBUG
 // set for them, and compile that; the source itself is untouched.
@@ -17,7 +17,7 @@
 
 import { dirname, fromFileUrl, join } from "@std/path";
 import { bold, cyan, gray, green, red, yellow } from "@std/fmt/colors";
-import { bundleMod, outputOf } from "./bundle.ts";
+import { bundleMod, gitVersion, outputOf } from "./bundle.ts";
 
 // ------------------------------------------------------------------ settings
 
@@ -326,8 +326,9 @@ function copyDir(from : string, to : string) : void {
 }
 
 // Copy the mod (minus src/) to a staging folder and bundle src/main.ts into it, with DEBUG
-// set to `debug`. Source keeps DEBUG false; dev builds stage it on, release builds off.
-async function stage(mod : string, debug : boolean) : Promise<string> {
+// set to `debug` and VERSION to `version`. Source keeps DEBUG false; dev builds stage it
+// on, release builds off.
+async function stage(mod : string, debug : boolean, version : string) : Promise<string> {
     const stage = join(buildsDir, ".stage", mod);
     try {
         Deno.removeSync(stage, { recursive: true });
@@ -340,11 +341,11 @@ async function stage(mod : string, debug : boolean) : Promise<string> {
     }
 
     try {
-        await bundleMod(mod, outputOf(mod, join(buildsDir, ".stage")), debug);
+        await bundleMod(mod, outputOf(mod, join(buildsDir, ".stage")), debug, version);
     } catch(e) {
         fail((e as Error).message);
     }
-    step("bundled " + mod + "/src with DEBUG " + (debug ? "on" : "off"));
+    step("bundled " + mod + " " + version + " with DEBUG " + (debug ? "on" : "off"));
     return stage;
 }
 
@@ -538,11 +539,24 @@ async function main() : Promise<void> {
     const mod = pickMod(args.mod);
 
     if(args.mode === "release") {
+        const version = await gitVersion();
         const output = join(buildsDir, mod + ".vpk");
-        step("release build of " + mod);
-        await compile(mod, output, await stage(mod, false));
+        step("release build of " + mod + " " + version);
+        if(version.endsWith("-dirty")) {
+            console.log(yellow("warning: ") + "uncommitted changes; commit first for a build that matches a commit.");
+        }
+        await compile(mod, output, await stage(mod, false, version));
         Deno.removeSync(join(buildsDir, ".stage"), { recursive: true });
+
+        // The VPK in a zip named with the version, ready to upload. -Force replaces a zip
+        // of the same version; zips of other versions are kept.
+        const zip = join(buildsDir, mod + "-" + version + ".zip");
+        const zipped = await powershell("Compress-Archive -LiteralPath " + psQuote(output) + " -DestinationPath " + psQuote(zip) + " -Force", true);
+        if(!zipped.ok) {
+            fail("couldn't zip " + output + ": " + zipped.out);
+        }
         step("done: " + output);
+        step("zipped: " + zip);
         return;
     }
 
@@ -559,7 +573,7 @@ async function main() : Promise<void> {
     await closeGame();
     ensureModsMounted(paths);
     step("building " + mod + " -> " + output);
-    await compile(mod, output, await stage(mod, true));
+    await compile(mod, output, await stage(mod, true, await gitVersion()));
     Deno.removeSync(join(buildsDir, ".stage"), { recursive: true });
 
     // Fresh log per run, so old lines don't scroll past.

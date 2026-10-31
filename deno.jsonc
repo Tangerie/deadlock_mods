@@ -50,11 +50,11 @@
         },
         "bundle": {
             "description": "Bundle <mod>/src/main.ts into <mod>/panorama/scripts/<mod>.js (DEBUG as in source). For the compiler menu; dev and build bundle by themselves. Usage: deno task bundle [mod]",
-            "command": "deno run --unstable-bundle --allow-read --allow-write .tooling/bundle.ts"
+            "command": "deno run --unstable-bundle --allow-read --allow-write --allow-run=git .tooling/bundle.ts"
         },
         "dev": {
             "description": "Bundle with DEBUG on, build, install into addons, launch Deadlock with -dev -console -condebug, follow the log. Usage: deno task dev [mod] [--all] [--filter <regex>] [-- <launch flags>]",
-            "command": "deno run --unstable-bundle --allow-read --allow-write --allow-run=powershell,tasklist .tooling/dev.ts",
+            "command": "deno run --unstable-bundle --allow-read --allow-write --allow-run=powershell,tasklist,git .tooling/dev.ts",
             "dependencies": ["verify"]
         },
         "log": {
@@ -62,8 +62,8 @@
             "command": "deno run --allow-read --allow-run=powershell,tasklist .tooling/dev.ts --log-only"
         },
         "build": {
-            "description": "Release build with DEBUG off, to tools/builds/<mod>.vpk. Usage: deno task build [mod]",
-            "command": "deno run --unstable-bundle --allow-read --allow-write --allow-run=powershell .tooling/dev.ts --release",
+            "description": "Release build with DEBUG off, to tools/builds/<mod>.vpk, plus <mod>-<commit>.zip holding it for upload. Usage: deno task build [mod]",
+            "command": "deno run --unstable-bundle --allow-read --allow-write --allow-run=powershell,git .tooling/dev.ts --release",
             "dependencies": ["verify"]
         },
         "pull": {

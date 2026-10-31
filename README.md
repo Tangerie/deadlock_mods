@@ -127,7 +127,7 @@ deno task dev [mod]
 | `--filter "regex"` | also show lines matching this (case-insensitive) |
 | `-- -novid +map xyz` | extra launch flags for this run |
 | `deno task log` | only follow the log (game already running with `-condebug`) |
-| `deno task build` | release build: `tools\builds\<mod>.vpk` with `DEBUG: false`, game untouched |
+| `deno task build` | release build: `tools\builds\<mod>.vpk` with `DEBUG: false`, plus `<mod>-<commit>.zip` holding it for upload; game untouched |
 | `deno task bundle` | only bundle `src/` into `panorama/scripts/<mod>.js` (for the compiler menu) |
 
 In VS Code, **Ctrl+Shift+B** runs `deno task dev` for the mod of the file you have open.
@@ -254,6 +254,9 @@ import * as umm from "@shared/umm.ts";
 - **DEBUG:** `Deno.bundle` has no "define" option, so the dev and release builds set DEBUG
   by rewriting the `DEBUG: true|false` property in the bundled output. Keep it written that
   way (a property in an object literal, on its own line).
+- **VERSION:** the same trick sets a `VERSION: "dev"` property to the current commit's short
+  hash, with `-dirty` added if there are uncommitted changes. It's in the bundle's first
+  line, the release zip's name (`<mod>-<commit>.zip`) and checkm8's `loaded` log line.
 - **Syntax isn't downlevelled.** The bundler has no target option, so what you write is what
   Panorama runs. The code sticks to syntax already proven in game; optional chaining (`?.`)
   and `??` are left out until someone confirms Panorama's V8 handles them.

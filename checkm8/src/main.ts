@@ -29,6 +29,9 @@ const CONFIG = {
     // true: log to the console with a [Tangerie] prefix. `deno task dev` builds turn
     // this on; leave it false here so release builds stay quiet.
     DEBUG: false,
+
+    // Replaced by the build with the commit's short hash ("-dirty" if uncommitted changes).
+    VERSION: "dev",
 };
 
 // Marks a kill panel as already handled. Stored on the panel itself because panels get
@@ -48,7 +51,6 @@ const settings = {
 
 const state = {
     damageInfo: null as Panel | null,
-    heroShop: null as Panel | null,
 
     // false until the first scan finishes. Kills already on screen when the
     // script (re)loads are marked handled but not sent.
@@ -116,47 +118,92 @@ const hooks = { log, alive: () => !isRetired() };
 // there, so only the shop is checked. Ability labels also differ per hero, but they're
 // localised, so they'd only work on an English client.
 
-// Hud > (unnamed panel) > CitadelHudHeroShop. hud_lookup finds it if the unnamed panel
-// is HudCore; otherwise look one level down from the Hud ourselves.
-function findHeroShop() : Panel | null {
-    if(isValid(state.heroShop)) {
-        return state.heroShop;
+// Every CitadelHudHeroShop one level under the Hud (Hud > unnamed panel > shop), found
+// fresh on each kill. Never cached, here or via hud_lookup: after a hero change a cached
+// shop panel stayed valid but still said the old hero (Solomon -> Paige still sent
+// "Checkmate"). Kills are rare and this only looks at the Hud's direct children.
+function findHeroShops() : Panel[] {
+    const shops : Panel[] = [];
+    const hud = lookup("Hud");
+    if(!hud) {
+        return shops;
     }
-    let shop = lookup("CitadelHudHeroShop");
-    const hud = shop ? null : lookup("Hud");
-    if(hud) {
-        for(let i = 0; i < hud.GetChildCount() && !shop; i++) {
-            const child = hud.GetChild(i);
-            if(isValid(child)) {
-                shop = child.FindChild("CitadelHudHeroShop");
-            }
+    for(let i = 0; i < hud.GetChildCount(); i++) {
+        const child = hud.GetChild(i);
+        const shop = isValid(child) ? child.FindChild("CitadelHudHeroShop") : null;
+        if(isValid(shop)) {
+            shops.push(shop);
         }
     }
-    state.heroShop = isValid(shop) ? shop : null;
-    return state.heroShop;
+    return shops;
 }
 
-// The KILL_LINES key of the hero you're playing, or null if the shop can't be found or
-// the hero isn't listed (a hero added after the list was made).
-function detectHero() : string | null {
-    const shop = findHeroShop();
-    if(!shop) {
-        log("hero: shop panel not found");
-        return null;
-    }
+function heroOf(shop : Panel) : string | null {
     for(const hero in KILL_LINES) {
         if(hasClass(shop, "hero_" + hero)) {
-            log("hero: " + hero);
             return hero;
         }
     }
-    log("hero: not in kill_lines.ts");
     return null;
+}
+
+// The KILL_LINES key of the hero you're playing, or null if the shop can't be found, the
+// hero isn't listed (a hero added after the list was made), or shop panels disagree.
+function detectHero() : string | null {
+    const shops = findHeroShops();
+    if(shops.length === 0) {
+        log("hero: shop panel not found");
+        return null;
+    }
+    const heroes = shops.map(heroOf);
+    if(heroes.some((hero) => hero !== heroes[0])) {
+        // Should only be one shop. If an old one is still around, we can't tell which
+        // is current, so send nothing rather than the wrong hero's line.
+        log("hero: " + shops.length + " shop panels disagree (" + heroes.join(", ") + ")");
+        return null;
+    }
+    log("hero: " + (heroes[0] || "not in kill_lines.ts") + (shops.length > 1 ? " (" + shops.length + " shop panels)" : ""));
+    return heroes[0];
+}
+
+// TEMPORARY probe, logged as "[Tangerie] probe: ..." on each kill. After Paige -> another
+// hero the shop still said hero_bookworm. Is it updated late (on opening the shop?), or does
+// it keep old hero classes? Compare against the ability bar, which is always current.
+function probeHero() : void {
+    for(const shop of findHeroShops()) {
+        const classes = Object.keys(KILL_LINES).filter((hero) => hasClass(shop, "hero_" + hero));
+        log("probe: shop hero classes = " + (classes.join(", ") || "none"));
+    }
+
+    const third = lookup("slot_signature_3");
+    const abilities = third ? third.GetParent() : null;
+    const names : string[] = [];
+    for(let slot = 1; slot <= 4 && isValid(abilities); slot++) {
+        const panel = abilities.FindChild("slot_signature_" + slot);
+        const label = isValid(panel) ? panel.FindChildrenWithClassTraverse("ability_name")[0] : null;
+        names.push(isValid(label) ? (label as Label).text : "?");
+    }
+    log("probe: ability bar = " + (names.join(", ") || "not found"));
+
+    const hud = lookup("Hud");
+    if(hud) {
+        const found = Object.keys(KILL_LINES)
+            .map((hero) => [hero, hud.FindChildrenWithClassTraverse("hero_" + hero).length] as const)
+            .filter(([, count]) => count > 0)
+            .map(([hero, count]) => hero + " x" + count);
+        log("probe: hero_* classes under Hud = " + (found.join(", ") || "none"));
+    }
 }
 
 // ------------------------------------------------------------------ kills
 
 function onKill() : void {
+    try {
+        probeHero();
+    } catch(e) {
+        log("probe: failed " + e);
+    }
+
     if(!settings.enabled) {
         log("kill, but disabled in settings");
         return;
@@ -288,5 +335,5 @@ umm.register({
 
 // ------------------------------------------------------------------ start
 
-log("loaded (generation " + generation + ")");
+log("loaded " + CONFIG.VERSION + " (generation " + generation + ")");
 scanKills();

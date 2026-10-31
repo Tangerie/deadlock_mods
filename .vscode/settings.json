@@ -3,7 +3,7 @@
     // mod scripts get Panorama types (types/panorama.d.ts), test/ and .tooling/ get Deno's.
     "deno.enable": true,
     "deno.lint": true,
-    "deno.config": "./deno.json",
+    "deno.config": "./deno.jsonc",
 
     "files.associations": {
         "*.vxml": "xml",
